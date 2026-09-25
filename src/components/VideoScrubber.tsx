@@ -15,71 +15,80 @@ export const VideoScrubber: React.FC = () => {
   const lenisRef = useRef<Lenis | null>(null);
 
   const [isLoaded, setIsLoaded] = useState(false);
-  const [isFading, setIsFading] = useState(false);
-  const [showScrollHint, setShowScrollHint] = useState(true);
-  const [atEnd, setAtEnd] = useState(false);
+  const [scrollProgress, setScrollProgress] = useState(0);
 
-  // Scrub engine refs
   const targetTimeRef = useRef(0);
-  const currentTimeRef = useRef(0);
-  const rafIdRef = useRef(0);
+  const isSeekingRef = useRef(false);
+  const pendingSeekTimeRef = useRef<number | null>(null);
+  const seekSafetyTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Choose video source based on viewport width
-  const [videoSrc, setVideoSrc] = useState("/redbull-video.mp4");
+  // Fast decoding video selection
+  const [videoSrc, setVideoSrc] = useState("/redbull-video-1080.mp4");
+
   useEffect(() => {
-    if (typeof window !== "undefined" && window.innerWidth < 768) {
-      setVideoSrc("/redbull-video-1080.mp4");
+    // 1080p all-intra video provides optimal 60fps seek performance across all desktop and mobile displays
+    setVideoSrc("/redbull-video-1080.mp4");
+  }, []);
+
+  const handleLoadedData = useCallback(() => {
+    const video = videoRef.current;
+    if (video) {
+      video.currentTime = 0;
+      setIsLoaded(true);
     }
   }, []);
 
-  // Video ready handler
   const handleCanPlay = useCallback(() => {
     setIsLoaded(true);
   }, []);
 
-  // Fallback: force-ready after 3s
+  // Failsafe timer to remove loading screen
   useEffect(() => {
-    const t = setTimeout(() => setIsLoaded(true), 3000);
-    return () => clearTimeout(t);
+    const timer = setTimeout(() => setIsLoaded(true), 2500);
+    return () => clearTimeout(timer);
   }, []);
 
-  // Fade out loading screen once loaded
-  useEffect(() => {
-    if (isLoaded) {
-      const t = setTimeout(() => setIsFading(true), 200);
-      return () => clearTimeout(t);
+  // Core Seek Execution Engine
+  const executeSeek = useCallback((time: number) => {
+    const video = videoRef.current;
+    if (!video || !video.duration || isNaN(time)) return;
+
+    const clampedTime = Math.max(0, Math.min(video.duration - 0.04, time));
+
+    if (isSeekingRef.current) {
+      pendingSeekTimeRef.current = clampedTime;
+      return;
     }
-  }, [isLoaded]);
 
-  // Hide scroll hint after first scroll or after 4s
-  useEffect(() => {
-    if (!isFading) return;
+    isSeekingRef.current = true;
+    video.currentTime = clampedTime;
 
-    const hideOnScroll = () => setShowScrollHint(false);
-    window.addEventListener("scroll", hideOnScroll, { once: true, passive: true });
+    // Safety timeout in case the browser drops the seeked event
+    if (seekSafetyTimerRef.current) clearTimeout(seekSafetyTimerRef.current);
+    seekSafetyTimerRef.current = setTimeout(() => {
+      isSeekingRef.current = false;
+      if (pendingSeekTimeRef.current !== null) {
+        const nextTime = pendingSeekTimeRef.current;
+        pendingSeekTimeRef.current = null;
+        executeSeek(nextTime);
+      }
+    }, 70);
+  }, []);
 
-    const t = setTimeout(() => setShowScrollHint(false), 4000);
-    return () => {
-      window.removeEventListener("scroll", hideOnScroll);
-      clearTimeout(t);
-    };
-  }, [isFading]);
-
-  // ── CORE SCRUB ENGINE ──
   useEffect(() => {
     const video = videoRef.current;
     const container = containerRef.current;
     if (!container || !video) return;
 
-    // Lenis smooth scroll
+    // Initialize Lenis smooth scroll
     const lenis = new Lenis({
-      duration: 1.2,
+      duration: 1.1,
       easing: (t) => Math.min(1, 1.001 - Math.pow(2, -10 * t)),
       orientation: "vertical",
       gestureOrientation: "vertical",
       smoothWheel: true,
-      wheelMultiplier: 0.8,
-      touchMultiplier: 1.5,
+      wheelMultiplier: 0.85,
+      touchMultiplier: 1.4,
     });
     lenisRef.current = lenis;
 
@@ -91,30 +100,35 @@ export const VideoScrubber: React.FC = () => {
     gsap.ticker.add(tickerCb);
     gsap.ticker.lagSmoothing(0);
 
-    // RAF lerp loop — smooth interpolation for buttery scrubbing
-    const scrubLoop = () => {
-      if (video && video.duration) {
-        const target = targetTimeRef.current;
-        const current = currentTimeRef.current;
-        const diff = target - current;
+    const onSeeked = () => {
+      if (seekSafetyTimerRef.current) clearTimeout(seekSafetyTimerRef.current);
+      isSeekingRef.current = false;
 
-        if (Math.abs(diff) > 0.001) {
-          const factor = Math.abs(diff) > 0.5 ? 0.3 : 0.18;
-          currentTimeRef.current += diff * factor;
-        } else {
-          currentTimeRef.current = target;
-        }
-
-        const seekDiff = Math.abs(video.currentTime - currentTimeRef.current);
-        if (seekDiff > 0.01) {
-          video.currentTime = currentTimeRef.current;
+      if (pendingSeekTimeRef.current !== null) {
+        const nextTime = pendingSeekTimeRef.current;
+        pendingSeekTimeRef.current = null;
+        if (Math.abs(video.currentTime - nextTime) > 0.015) {
+          executeSeek(nextTime);
         }
       }
-      rafIdRef.current = requestAnimationFrame(scrubLoop);
     };
-    rafIdRef.current = requestAnimationFrame(scrubLoop);
 
-    // ScrollTrigger: maps scroll 0-100% to video timeline
+    video.addEventListener("seeked", onSeeked);
+
+    // Continuous frame sync loop for silky responsiveness
+    let rafId: number;
+    const syncLoop = () => {
+      if (video && video.duration && !isSeekingRef.current) {
+        const target = targetTimeRef.current;
+        if (Math.abs(video.currentTime - target) > 0.02) {
+          executeSeek(target);
+        }
+      }
+      rafId = requestAnimationFrame(syncLoop);
+    };
+    rafId = requestAnimationFrame(syncLoop);
+
+    // GSAP ScrollTrigger: maps 0% -> 100% of scroll to video timeline
     const st = ScrollTrigger.create({
       trigger: container,
       start: "top top",
@@ -122,58 +136,58 @@ export const VideoScrubber: React.FC = () => {
       scrub: true,
       onUpdate: (self) => {
         const progress = self.progress;
+        setScrollProgress(progress);
 
         if (video && video.duration) {
           const maxTime = Math.max(0, video.duration - 0.04);
-          let t: number;
-          if (progress <= 0.001) {
-            t = 0;
-          } else if (progress >= 0.998) {
-            t = maxTime;
-          } else {
-            t = progress * maxTime;
-          }
-          targetTimeRef.current = t;
-          currentTimeRef.current = currentTimeRef.current || 0;
-        }
+          let target = progress * maxTime;
+          if (progress <= 0.001) target = 0;
+          if (progress >= 0.997) target = maxTime;
 
-        setAtEnd(progress >= 0.993);
+          targetTimeRef.current = target;
+          executeSeek(target);
+        }
       },
     });
 
     return () => {
       st.kill();
-      cancelAnimationFrame(rafIdRef.current);
+      cancelAnimationFrame(rafId);
       gsap.ticker.remove(tickerCb);
       lenis.destroy();
       lenisRef.current = null;
+      video.removeEventListener("seeked", onSeeked);
+      if (seekSafetyTimerRef.current) clearTimeout(seekSafetyTimerRef.current);
     };
-  }, [videoSrc]);
+  }, [executeSeek, videoSrc]);
+
+  const atEnd = scrollProgress >= 0.992;
+  const isAtStart = scrollProgress < 0.03;
 
   return (
     <>
-      {/* Loading screen */}
-      {!isFading ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#030305]">
-          <div className="flex flex-col items-center gap-4">
-            <div className="w-2 h-2 rounded-full bg-white/80 animate-pulse" />
-            <span className="text-[11px] font-mono tracking-[0.3em] text-white/30 uppercase">
-              Loading
-            </span>
-          </div>
+      {/* Minimal Loading Screen */}
+      <div
+        className={`fixed inset-0 z-50 flex items-center justify-center bg-[#050608] transition-opacity duration-700 ${
+          isLoaded ? "opacity-0 pointer-events-none" : "opacity-100"
+        }`}
+      >
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-2.5 h-2.5 rounded-full bg-[#ea1d2d] animate-ping" />
+          <span className="text-[11px] font-mono tracking-[0.3em] text-neutral-400 uppercase">
+            Loading
+          </span>
         </div>
-      ) : (
-        <div className="fixed inset-0 z-50 bg-[#030305] pointer-events-none transition-opacity duration-700 opacity-0" />
-      )}
+      </div>
 
-      {/* Scroll container — 500vh for fine-grained scrubbing */}
+      {/* Main Scroll Container (550vh for tactile, cinematic scrubbing) */}
       <div
         ref={containerRef}
-        className="relative w-full bg-[#030305]"
-        style={{ height: "500vh" }}
+        className="relative w-full bg-[#050608]"
+        style={{ height: "550vh" }}
       >
-        {/* Pinned full-viewport video */}
-        <div className="fixed inset-0 w-screen h-screen overflow-hidden z-10">
+        {/* Full-Screen Pinned Viewport */}
+        <div className="fixed inset-0 w-screen h-screen overflow-hidden pointer-events-none z-10">
           <video
             ref={videoRef}
             src={videoSrc}
@@ -181,14 +195,16 @@ export const VideoScrubber: React.FC = () => {
             preload="auto"
             muted
             playsInline
+            onLoadedData={handleLoadedData}
+            onCanPlay={handleCanPlay}
             onCanPlayThrough={handleCanPlay}
-            className="w-full h-full object-cover object-center"
+            className="w-full h-full object-cover object-center transform-gpu"
           />
 
           {/* Subtle cinematic vignette */}
-          <div className="absolute inset-0 pointer-events-none bg-gradient-to-t from-black/30 via-transparent to-black/20" />
+          <div className="absolute inset-0 pointer-events-none bg-gradient-to-t from-black/35 via-transparent to-black/25" />
 
-          {/* Final frame lock at 100% scroll */}
+          {/* Final Frame Lock (100% scroll) */}
           <div
             className={`absolute inset-0 pointer-events-none transition-opacity duration-500 ${
               atEnd ? "opacity-100" : "opacity-0"
@@ -196,22 +212,26 @@ export const VideoScrubber: React.FC = () => {
           >
             <img
               src="/poster-final.jpg"
-              alt=""
+              alt="Final Invitation"
               className="w-full h-full object-cover object-center"
             />
           </div>
         </div>
 
-        {/* Initial scroll hint — auto-fades */}
-        {showScrollHint && isFading && (
-          <div className="fixed bottom-10 left-1/2 -translate-x-1/2 z-30 flex flex-col items-center gap-2 animate-pulse pointer-events-none">
-            <div className="w-[1px] h-8 bg-gradient-to-b from-transparent to-white/40" />
-            <span className="text-[10px] font-mono tracking-[0.25em] text-white/25 uppercase">
-              Scroll
-            </span>
-          </div>
-        )}
+        {/* Minimal Subtle Scroll Indicator at Start */}
+        <div
+          className={`fixed bottom-10 left-1/2 -translate-x-1/2 z-20 flex flex-col items-center gap-2 pointer-events-none transition-opacity duration-500 ${
+            isAtStart && isLoaded ? "opacity-75" : "opacity-0"
+          }`}
+        >
+          <div className="w-[1px] h-8 bg-gradient-to-b from-transparent via-white/50 to-white/90 animate-pulse" />
+          <span className="text-[10px] font-mono tracking-[0.25em] text-neutral-400 uppercase">
+            Scroll
+          </span>
+        </div>
       </div>
     </>
   );
 };
+
+export default VideoScrubber;

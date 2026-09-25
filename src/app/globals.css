@@ -9,16 +9,17 @@
 
   html,
   body {
-    background-color: #030305;
+    background-color: #050608;
     color: #ffffff;
     overflow-x: hidden;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     user-select: none;
     -webkit-user-select: none;
   }
 
-  /* Hide scrollbar entirely — the video IS the interface */
+  /* Hide default scrollbar for pure immersive cinematic video */
   ::-webkit-scrollbar {
     display: none;
   }
@@ -28,7 +29,7 @@
   }
 }
 
-/* Lenis smooth scrolling */
+/* Lenis smooth scrolling rules */
 html.lenis,
 html.lenis body {
   height: auto;

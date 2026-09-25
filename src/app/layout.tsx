@@ -4,14 +4,14 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "AIML Club x Red Bull | Inventra 2026",
   description:
-    "A cinematic scroll-controlled video experience.",
+    "An interactive cinematic scroll-controlled experience for Red Bull.",
 };
 
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   maximumScale: 5,
-  themeColor: "#030305",
+  themeColor: "#050608",
 };
 
 export default function RootLayout({
@@ -20,8 +20,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
-      <body className="bg-[#030305]">{children}</body>
+    <html lang="en" className="dark bg-[#050608] text-white">
+      <body className="min-h-screen bg-[#050608] text-white antialiased overflow-x-hidden">
+        {children}
+      </body>
     </html>
   );
 }
