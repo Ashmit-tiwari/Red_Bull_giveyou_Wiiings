@@ -4,9 +4,9 @@
   "description": "AIML Club x Red Bull Inventra 2026 Cinematic Invitation",
   "main": "index.js",
   "scripts": {
-    "dev": "next dev -H 0.0.0.0 -p 3000",
+    "dev": "next dev",
     "build": "next build",
-    "start": "next start -H 0.0.0.0 -p 3000"
+    "start": "next start"
   },
   "keywords": [],
   "type": "module",
