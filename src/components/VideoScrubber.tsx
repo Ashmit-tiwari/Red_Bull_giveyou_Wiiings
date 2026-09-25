@@ -32,12 +32,12 @@ export const VideoScrubber: React.FC = () => {
     }
   }, []);
 
-  // Video ready handler — show loading screen until video can play
+  // Video ready handler
   const handleCanPlay = useCallback(() => {
     setIsLoaded(true);
   }, []);
 
-  // Fallback: force-ready after 3s even if canplay hasn't fired
+  // Fallback: force-ready after 3s
   useEffect(() => {
     const t = setTimeout(() => setIsLoaded(true), 3000);
     return () => clearTimeout(t);
@@ -46,7 +46,6 @@ export const VideoScrubber: React.FC = () => {
   // Fade out loading screen once loaded
   useEffect(() => {
     if (isLoaded) {
-      // Small delay before starting fade
       const t = setTimeout(() => setIsFading(true), 200);
       return () => clearTimeout(t);
     }
@@ -66,13 +65,13 @@ export const VideoScrubber: React.FC = () => {
     };
   }, [isFading]);
 
-  // ── CORE SCRUB ENGINE ──────────────────────────────────────────────
+  // ── CORE SCRUB ENGINE ──
   useEffect(() => {
     const video = videoRef.current;
     const container = containerRef.current;
     if (!container || !video) return;
 
-    // ── Lenis smooth scroll ──
+    // Lenis smooth scroll
     const lenis = new Lenis({
       duration: 1.2,
       easing: (t) => Math.min(1, 1.001 - Math.pow(2, -10 * t)),
@@ -92,9 +91,7 @@ export const VideoScrubber: React.FC = () => {
     gsap.ticker.add(tickerCb);
     gsap.ticker.lagSmoothing(0);
 
-    // ── RAF lerp loop ──
-    // Smoothly interpolates video.currentTime toward targetTime
-    // This is what makes fast scrolling feel buttery
+    // RAF lerp loop — smooth interpolation for buttery scrubbing
     const scrubLoop = () => {
       if (video && video.duration) {
         const target = targetTimeRef.current;
@@ -102,14 +99,12 @@ export const VideoScrubber: React.FC = () => {
         const diff = target - current;
 
         if (Math.abs(diff) > 0.001) {
-          // Adaptive lerp: faster catch-up when far, gentle when close
           const factor = Math.abs(diff) > 0.5 ? 0.3 : 0.18;
           currentTimeRef.current += diff * factor;
         } else {
           currentTimeRef.current = target;
         }
 
-        // Only seek if the actual video position is different enough
         const seekDiff = Math.abs(video.currentTime - currentTimeRef.current);
         if (seekDiff > 0.01) {
           video.currentTime = currentTimeRef.current;
@@ -119,14 +114,14 @@ export const VideoScrubber: React.FC = () => {
     };
     rafIdRef.current = requestAnimationFrame(scrubLoop);
 
-    // ── ScrollTrigger: maps scroll position → video timeline ──
+    // ScrollTrigger: maps scroll 0-100% to video timeline
     const st = ScrollTrigger.create({
       trigger: container,
       start: "top top",
       end: "bottom bottom",
       scrub: true,
       onUpdate: (self) => {
-        const progress = self.progress; // 0.0 → 1.0
+        const progress = self.progress;
 
         if (video && video.duration) {
           const maxTime = Math.max(0, video.duration - 0.04);
@@ -139,10 +134,9 @@ export const VideoScrubber: React.FC = () => {
             t = progress * maxTime;
           }
           targetTimeRef.current = t;
-          currentTimeRef.current = currentTimeRef.current || 0; // init guard
+          currentTimeRef.current = currentTimeRef.current || 0;
         }
 
-        // Track end state for final-frame lock
         setAtEnd(progress >= 0.993);
       },
     });
@@ -158,7 +152,7 @@ export const VideoScrubber: React.FC = () => {
 
   return (
     <>
-      {/* ── Loading screen ── */}
+      {/* Loading screen */}
       {!isFading ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#030305]">
           <div className="flex flex-col items-center gap-4">
@@ -172,13 +166,13 @@ export const VideoScrubber: React.FC = () => {
         <div className="fixed inset-0 z-50 bg-[#030305] pointer-events-none transition-opacity duration-700 opacity-0" />
       )}
 
-      {/* ── Scroll container (500vh for fine-grained scrubbing) ── */}
+      {/* Scroll container — 500vh for fine-grained scrubbing */}
       <div
         ref={containerRef}
         className="relative w-full bg-[#030305]"
         style={{ height: "500vh" }}
       >
-        {/* ── Pinned full-viewport video ── */}
+        {/* Pinned full-viewport video */}
         <div className="fixed inset-0 w-screen h-screen overflow-hidden z-10">
           <video
             ref={videoRef}
@@ -194,7 +188,7 @@ export const VideoScrubber: React.FC = () => {
           {/* Subtle cinematic vignette */}
           <div className="absolute inset-0 pointer-events-none bg-gradient-to-t from-black/30 via-transparent to-black/20" />
 
-          {/* Final frame lock — shows poster-final when scroll reaches 100% */}
+          {/* Final frame lock at 100% scroll */}
           <div
             className={`absolute inset-0 pointer-events-none transition-opacity duration-500 ${
               atEnd ? "opacity-100" : "opacity-0"
@@ -208,7 +202,7 @@ export const VideoScrubber: React.FC = () => {
           </div>
         </div>
 
-        {/* ── Initial scroll hint — auto-fades ── */}
+        {/* Initial scroll hint — auto-fades */}
         {showScrollHint && isFading && (
           <div className="fixed bottom-10 left-1/2 -translate-x-1/2 z-30 flex flex-col items-center gap-2 animate-pulse pointer-events-none">
             <div className="w-[1px] h-8 bg-gradient-to-b from-transparent to-white/40" />
